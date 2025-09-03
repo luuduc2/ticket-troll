@@ -3,7 +3,15 @@ import time
 
 class ApiFindById():
     def __init__(self, token, name):
-        self.token = token
+        # Clean token to ensure it's a proper string without newlines and decode if needed
+        if isinstance(token, bytes):
+            self.token = token.decode('utf-8').strip()
+        else:
+            self.token = str(token).strip() if token else ""
+        
+        # Remove any BOM or special characters
+        self.token = self.token.replace('\ufeff', '').replace('\n', '').replace('\r', '')
+        
         self.headers = {
             'accept': 'application/json, text/plain, */*',
             'accept-language': 'en-US,en;q=0.9',

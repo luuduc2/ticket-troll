@@ -10,6 +10,10 @@ from bin.lib.ApiFindById import ApiFindById
 # Check and install required packages
 check_and_install_requirements()
 
+# Global cancellation flag
+booking_cancelled = False
+current_checking_thread = None
+
 # re check
 
 # สร้างหน้าต่างหลัก
@@ -82,14 +86,33 @@ def start_at_scheduled_time():
             return
 
         while True:
+            # Check for cancellation during timer wait
+            if booking_cancelled:
+                print("[MAIN] Timer cancelled by user")
+                status_text.insert("end", "⏰ Scheduled booking cancelled.\n")
+                return
+                
             current_time = datetime.now().time()
             if current_time >= target_time:
                 start_action()  # เรียกฟังก์ชัน start_action เมื่อถึงเวลาที่กำหนด
                 break
             time.sleep(1)  # รอ 1 วินาทีแล้วเช็คใหม่อีกครั้ง
 
+# ฟังก์ชันสำหรับปุ่ม Cancel
+def on_cancel_button_click():
+    global booking_cancelled
+    booking_cancelled = True
+    status_text.insert("end", "❌ Booking process cancelled by user.\n")
+    print("[MAIN] User cancelled the booking process - setting cancellation flag")
+    print("[MAIN] Any ongoing booking status checks will be stopped")
+
 # ฟังก์ชันสำหรับปุ่ม Start
 def on_start_button_click():
+    global booking_cancelled
+    # Reset cancellation flag for new booking
+    booking_cancelled = False
+    print("[MAIN] Starting new booking process - reset cancellation flag")
+    
     # ถ้าติ๊กที่ "ตั้งเวลา" ให้ใช้ฟังก์ชันตามเวลาที่ตั้งไว้
     if set_time_var.get():
         threading.Thread(target=start_at_scheduled_time).start()
@@ -98,6 +121,8 @@ def on_start_button_click():
 
 # ฟังก์ชันสำหรับเริ่มทำงาน
 def start_action():
+    global booking_cancelled, current_checking_thread
+    
     token = token_entry.get()
     name = name_entry.get()
     zone_id = zone_entry.get()
@@ -113,16 +138,61 @@ def start_action():
     if event_id:
         # ใช้ event_id ที่ได้มาไปทำงานกับ ApiAllTicket
         api_all_ticket = ApiAllTicket(token, name, cookie)
+        
+        # Define cancellation check function
+        def is_cancelled():
+            return booking_cancelled
+        
         if zone_id == "REG":
             number_uuid = api_all_ticket.handler_reserve_festival(event_id, zone_id, round_id, int(tickets))
-            status_text.insert("2.0", f"Reservation UUID: {number_uuid}. \n success.... \n")
+            status_text.insert("2.0", f"Reservation UUID: {number_uuid}. \n")
+            
+            # Check booking status if UUID was returned
+            if number_uuid:
+                print("[MAIN] Waiting 8 seconds after reserve before starting booking status check...")
+                status_text.insert("end", "Waiting 8 seconds before checking booking status...\n")
+                
+                # Wait 8 seconds after reserve, checking for cancellation every second
+                for i in range(8):
+                    if booking_cancelled:
+                        status_text.insert("end", "🛑 Booking status check cancelled during initial wait\n")
+                        return
+                    time.sleep(1)
+                
+                print("[MAIN] Starting booking status check thread...")
+                current_checking_thread = threading.Thread(
+                    target=lambda: api_all_ticket.handler_check_booking(number_uuid, status_text, is_cancelled)
+                )
+                current_checking_thread.start()
+            else:
+                status_text.insert("end", "Failed to get reservation UUID.\n")
         else:
             # เรียกใช้ฟังก์ชันจาก ApiAllTicket
             available_seats = api_all_ticket.get_seats(event_id, round_id, zone_id, int(tickets))
             print(available_seats)
             # ทำการจองที่นั่ง
             number_uuid = api_all_ticket.handler_reserve(event_id, zone_id, round_id, available_seats)
-            status_text.insert("2.0", f"Reservation UUID: {number_uuid}. \n success.... \n")
+            status_text.insert("2.0", f"Reservation UUID: {number_uuid}. \n")
+            
+            # Check booking status if UUID was returned
+            if number_uuid:
+                print("[MAIN] Waiting 8 seconds after reserve before starting booking status check...")
+                status_text.insert("end", "Waiting 8 seconds before checking booking status...\n")
+                
+                # Wait 8 seconds after reserve, checking for cancellation every second
+                for i in range(8):
+                    if booking_cancelled:
+                        status_text.insert("end", "🛑 Booking status check cancelled during initial wait\n")
+                        return
+                    time.sleep(1)
+                
+                print("[MAIN] Starting booking status check thread...")
+                current_checking_thread = threading.Thread(
+                    target=lambda: api_all_ticket.handler_check_booking(number_uuid, status_text, is_cancelled)
+                )
+                current_checking_thread.start()
+            else:
+                status_text.insert("end", "Failed to get reservation UUID.\n")
 
     else:
         status_text.insert("2.0", "Failed to retrieve event ID.\n")
@@ -134,7 +204,7 @@ button_frame.grid(row=9, column=0, columnspan=2, pady=(20, 10))
 start_button = tk.Button(button_frame, text="START", font=button_font, bg="blue", fg="white", width=12, command=on_start_button_click)
 start_button.pack(side="left", padx=10)
 
-cancel_button = tk.Button(button_frame, text="Cancel", font=button_font, bg="red", fg="white", width=12)
+cancel_button = tk.Button(button_frame, text="Cancel", font=button_font, bg="red", fg="white", width=12, command=on_cancel_button_click)
 cancel_button.pack(side="left", padx=10)
 
 # ช่องแสดงสถานะ

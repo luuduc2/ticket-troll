@@ -4,8 +4,21 @@ import time
 
 class ApiAllTicket:
     def __init__(self, token, event_name, cookie):
-        self.token = token
-        self.cookie = cookie
+        # Clean token and cookie to ensure they're proper strings without newlines and decode if needed
+        if isinstance(token, bytes):
+            self.token = token.decode('utf-8').strip()
+        else:
+            self.token = str(token).strip() if token else ""
+            
+        if isinstance(cookie, bytes):
+            self.cookie = cookie.decode('utf-8').strip()
+        else:
+            self.cookie = str(cookie).strip() if cookie else ""
+            
+        # Remove any BOM or special characters
+        self.token = self.token.replace('\ufeff', '').replace('\n', '').replace('\r', '')
+        self.cookie = self.cookie.replace('\ufeff', '').replace('\n', '').replace('\r', '')
+        
         self.base_url = 'https://www.allticket.com/api-booking/'
         self.headers = {
             'accept': 'application/json, text/plain, */*',
@@ -98,3 +111,153 @@ class ApiAllTicket:
         except requests.RequestException as e:
             print(f"Error reserving seats: {e}")
             return None
+
+    def handler_check_booking(self, uuid, status_text=None, cancellation_flag=None):
+        """Check booking status until completion or timeout"""
+        print(f"[BOOKING_CHECK] Starting booking status check")
+        print(f"[BOOKING_CHECK] UUID: {uuid}")
+        print(f"[BOOKING_CHECK] Max attempts: 60 (5 minutes)")
+        
+        if not uuid:
+            print(f"[BOOKING_CHECK] ERROR: No UUID provided")
+            return None
+            
+        url = f'{self.base_url.replace("api-booking", "api-verify")}check-booking'
+        payload = {'uuid': uuid}
+        max_attempts = 60  # 5 minutes with 5-second intervals
+        attempt = 0
+        
+    def handler_check_booking(self, uuid, status_text=None, cancellation_flag=None):
+        """Check booking status until completion or timeout"""
+        print(f"[BOOKING_CHECK] Starting booking status check")
+        print(f"[BOOKING_CHECK] UUID: {uuid}")
+        print(f"[BOOKING_CHECK] Max attempts: 4 (5s intervals)")
+        
+        if not uuid:
+            print(f"[BOOKING_CHECK] ERROR: No UUID provided")
+            return None
+            
+        url = f'{self.base_url.replace("api-booking", "api-verify")}check-booking'
+        payload = {'uuid': uuid}
+        max_attempts = 4  # 4 attempts total
+        attempt = 0
+        
+        print(f"[BOOKING_CHECK] API URL: {url}")
+        print(f"[BOOKING_CHECK] Payload: {payload}")
+        
+        if status_text:
+            status_text.insert("end", f"Checking booking status for UUID: {uuid}...\n")
+        
+        # Print to console for logging
+        print(f"Checking booking status for UUID: {uuid}...")
+        
+        while attempt < max_attempts:
+            # Check for cancellation
+            if cancellation_flag and hasattr(cancellation_flag, '__call__') and cancellation_flag():
+                cancel_msg = "🛑 Booking status check cancelled by user"
+                print(f"[BOOKING_CHECK] CANCELLED: {cancel_msg}")
+                if status_text:
+                    status_text.insert("end", f"{cancel_msg}\n")
+                return None
+            
+            try:
+                print(f"[BOOKING_CHECK] Attempt {attempt + 1}/{max_attempts}")
+                
+                response = requests.post(url, headers=self.headers, json=payload)
+                print(f"[BOOKING_CHECK] HTTP Status: {response.status_code}")
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                print(f"[BOOKING_CHECK] Response: {data}")
+                
+                if status_text:
+                    status_text.insert("end", f"Attempt {attempt + 1}: Checking status...\n")
+                
+                # Check if booking is complete (success)
+                if data.get("success") and data.get("code") == "100":
+                    success_msg = "✓ Booking confirmed successfully!"
+                    reserve_id = data.get('data', {}).get('reserveId', 'N/A')
+                    
+                    # Print to console for logging
+                    print(f"[BOOKING_CHECK] SUCCESS: {success_msg}")
+                    print(f"[BOOKING_CHECK] Reserve ID: {reserve_id}")
+                    
+                    if status_text:
+                        status_text.insert("end", f"{success_msg}\n")
+                        status_text.insert("end", f"Reserve ID: {reserve_id}\n")
+                    return data
+                
+                # Check if still waiting
+                elif data.get("code") == "51002":
+                    wait_time = 5  # Consistent 5-second intervals
+                    remaining_attempts = max_attempts - attempt - 1
+                    processing_msg = f"Booking still processing... ({remaining_attempts} attempts remaining, wait {wait_time} seconds)"
+                    
+                    # Print to console for logging
+                    print(f"[BOOKING_CHECK] WAITING: {processing_msg}")
+                    
+                    if status_text:
+                        status_text.insert("end", f"{processing_msg}\n")
+                    
+                    # Only wait if there are more attempts remaining
+                    if remaining_attempts > 0:
+                        # Wait with cancellation check during wait period
+                        print(f"[BOOKING_CHECK] Waiting {wait_time} seconds before next attempt...")
+                        for i in range(wait_time):
+                            if cancellation_flag and hasattr(cancellation_flag, '__call__') and cancellation_flag():
+                                cancel_msg = "🛑 Booking status check cancelled during wait"
+                                print(f"[BOOKING_CHECK] CANCELLED: {cancel_msg}")
+                                if status_text:
+                                    status_text.insert("end", f"{cancel_msg}\n")
+                                return None
+                            time.sleep(1)
+                    
+                    attempt += 1
+                    continue
+                
+                # Handle other response codes
+                else:
+                    error_msg = f"Unexpected response: {data.get('message', 'Unknown error')}"
+                    print(f"[BOOKING_CHECK] UNEXPECTED: {error_msg}")
+                    print(f"[BOOKING_CHECK] Full response: {data}")
+                    
+                    if status_text:
+                        status_text.insert("end", f"{error_msg}\n")
+                    return data
+                    
+            except requests.RequestException as e:
+                error_msg = f"Network error during status check: {e}"
+                print(f"[BOOKING_CHECK] NETWORK_ERROR: {error_msg}")
+                
+                if status_text:
+                    status_text.insert("end", f"{error_msg}\n")
+                
+                # Wait before retry for network errors, but check for cancellation
+                print(f"[BOOKING_CHECK] Waiting 5 seconds before retry due to network error...")
+                for i in range(5):
+                    if cancellation_flag and hasattr(cancellation_flag, '__call__') and cancellation_flag():
+                        cancel_msg = "🛑 Booking status check cancelled during network error retry"
+                        print(f"[BOOKING_CHECK] CANCELLED: {cancel_msg}")
+                        if status_text:
+                            status_text.insert("end", f"{cancel_msg}\n")
+                        return None
+                    time.sleep(1)
+                
+                attempt += 1
+                continue
+        
+        # Timeout reached
+        timeout_msg = f"⚠ Booking status check timed out after 4 attempts."
+        manual_check_msg = f"Please check your booking manually with UUID: {uuid}"
+        
+        # Print to console for logging
+        print(f"[BOOKING_CHECK] TIMEOUT: {timeout_msg}")
+        print(f"[BOOKING_CHECK] MANUAL_CHECK: {manual_check_msg}")
+        print(f"[BOOKING_CHECK] Final attempt count: {attempt}")
+        
+        if status_text:
+            status_text.insert("end", f"{timeout_msg}\n")
+            status_text.insert("end", f"{manual_check_msg}\n")
+        
+        return None
