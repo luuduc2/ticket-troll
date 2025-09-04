@@ -70,6 +70,11 @@ tk.Label(root, text="Cookie", font=font, fg=text_color, bg=bg_color).grid(row=7,
 cookie_entry = tk.Entry(root, width=30, font=font, show="*")
 cookie_entry.grid(row=7, column=1, sticky="w", padx=10)
 
+# Add a checkbox for random seat selection
+random_seat_var = tk.BooleanVar()
+random_seat_checkbox = tk.Checkbutton(root, text="Random Seat Selection", variable=random_seat_var, font=font, fg=text_color, bg=bg_color)
+random_seat_checkbox.grid(row=8, column=1, sticky="w", padx=10)
+
 # ฟังก์ชันเพื่อเริ่มต้นการทำงานตามเวลาที่ตั้งไว้
 def start_at_scheduled_time():
     if set_time_var.get():  # ตรวจสอบว่าติ๊ก "ตั้งเวลา" หรือไม่
@@ -106,8 +111,11 @@ def start_action():
     time_set = time_entry.get()
     cookie = cookie_entry.get()
 
+    # Check if random seat selection is enabled
+    random_seat = random_seat_var.get()
+
     # เรียกใช้ APIFindById เพื่อดึง event_id
-    api_find_by_id = ApiFindById(token,name)
+    api_find_by_id = ApiFindById(token, name)
     event_id = api_find_by_id.get_event_id(name)
 
     if event_id:
@@ -118,7 +126,7 @@ def start_action():
             status_text.insert("2.0", f"Reservation UUID: {number_uuid}. \n success.... \n")
         else:
             # เรียกใช้ฟังก์ชันจาก ApiAllTicket
-            available_seats = api_all_ticket.get_seats(event_id, round_id, zone_id, int(tickets))
+            available_seats = api_all_ticket.get_seats(event_id, round_id, zone_id, int(tickets), random_seat)
             print(available_seats)
             # ทำการจองที่นั่ง
             number_uuid = api_all_ticket.handler_reserve(event_id, zone_id, round_id, available_seats)
