@@ -79,6 +79,17 @@ random_seat_var = tk.BooleanVar()
 random_seat_checkbox = tk.Checkbutton(root, text="Random Seat Selection", variable=random_seat_var, font=font, fg=text_color, bg=bg_color)
 random_seat_checkbox.grid(row=8, column=1, sticky="w", padx=10)
 
+tk.Label(root, text="Member Code", font=font, fg=text_color, bg=bg_color).grid(row=9, column=0, sticky="e", padx=10, pady=5)
+member_code_entry = tk.Entry(root, width=30, font=font, show="*")
+member_code_entry.grid(row=9, column=1, sticky="w", padx=10)
+
+
+# Add presale mode checkbox and member code input
+presale_var = tk.BooleanVar()
+presale_checkbox = tk.Checkbutton(root, text="Presale Mode", variable=presale_var, font=font, fg=text_color, bg=bg_color)
+presale_checkbox.grid(row=10, column=1, sticky="w", padx=10)
+
+
 # ฟังก์ชันเพื่อเริ่มต้นการทำงานตามเวลาที่ตั้งไว้
 def start_at_scheduled_time():
     if set_time_var.get():  # ตรวจสอบว่าติ๊ก "ตั้งเวลา" หรือไม่
@@ -138,6 +149,10 @@ def start_action():
 
     # Check if random seat selection is enabled
     random_seat = random_seat_var.get()
+    
+    # Get presale mode and member code if enabled
+    presale_mode = presale_var.get()
+    member_code = member_code_entry.get() if presale_mode else None
 
     # เรียกใช้ APIFindById เพื่อดึง event_id
     api_find_by_id = ApiFindById(token, name)
@@ -145,7 +160,18 @@ def start_action():
 
     if event_id:
         # ใช้ event_id ที่ได้มาไปทำงานกับ ApiAllTicket
-        api_all_ticket = ApiAllTicket(token, name, cookie)
+        api_all_ticket = ApiAllTicket(token, name, cookie, member_code)
+        
+        # Check membership if in presale mode
+        if presale_mode:
+            if not member_code:
+                status_text.insert("end", "❌ Member code is required for presale mode.\n")
+                return
+                
+            if not api_all_ticket.check_membership(event_id):
+                status_text.insert("end", "❌ Invalid member code or membership check failed.\n")
+                return
+            status_text.insert("end", "✓ Member code verified successfully.\n")
         
         # Define cancellation check function
         def is_cancelled():
@@ -207,17 +233,40 @@ def start_action():
 
 # ปุ่ม Start และ Cancel
 button_frame = tk.Frame(root, bg=bg_color)
-button_frame.grid(row=9, column=0, columnspan=2, pady=(20, 10))
+button_frame.grid(row=12, column=0, columnspan=2, pady=(20, 10))
 
-start_button = tk.Button(button_frame, text="START", font=button_font, bg="blue", fg="white", width=12, command=on_start_button_click)
+# Updated button styling with better visibility
+start_button = tk.Button(
+    button_frame,
+    text="START",
+    font=button_font,
+    bg="#007bff",  # Bootstrap-style blue
+    fg="white",
+    width=12,
+    command=on_start_button_click,
+    relief=tk.RAISED,
+    activebackground="#0056b3",  # Darker blue for hover
+    activeforeground="white"
+)
 start_button.pack(side="left", padx=10)
 
-cancel_button = tk.Button(button_frame, text="Cancel", font=button_font, bg="red", fg="white", width=12, command=on_cancel_button_click)
+cancel_button = tk.Button(
+    button_frame,
+    text="Cancel",
+    font=button_font,
+    bg="#dc3545",  # Bootstrap-style red
+    fg="white",
+    width=12,
+    command=on_cancel_button_click,
+    relief=tk.RAISED,
+    activebackground="#c82333",  # Darker red for hover
+    activeforeground="white"
+)
 cancel_button.pack(side="left", padx=10)
 
 # ช่องแสดงสถานะ
 status_text = tk.Text(root, height=8, font=font, wrap="word")
-status_text.grid(row=10, column=0, columnspan=2, pady=(10, 20), padx=10, sticky="ew")
+status_text.grid(row=11, column=0, columnspan=2, pady=(10, 20), padx=10, sticky="ew")
 status_text.insert("1.0", "Bot start... \n")
 
 # กำหนด column weight ให้ช่องแสดงสถานะและปุ่มอยู่ตรงกลาง

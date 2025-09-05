@@ -4,7 +4,7 @@ import random  # Add this import
 
 
 class ApiAllTicket:
-    def __init__(self, token, event_name, cookie):
+    def __init__(self, token, event_name, cookie, member_code=None):
         # Clean token and cookie to ensure they're proper strings without newlines and decode if needed
         if isinstance(token, bytes):
             self.token = token.decode('utf-8').strip()
@@ -15,6 +15,9 @@ class ApiAllTicket:
             self.cookie = cookie.decode('utf-8').strip()
         else:
             self.cookie = str(cookie).strip() if cookie else ""
+            
+        self.member_code = member_code
+        self.member_key = None
             
         # Remove any BOM or special characters
         self.token = self.token.replace('\ufeff', '').replace('\n', '').replace('\r', '')
@@ -41,10 +44,44 @@ class ApiAllTicket:
             'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
         }
 
+    def check_membership(self, perform_id):
+        """Check membership code validity and get member key"""
+        if not self.member_code:
+            return False
+            
+        url = f'{self.base_url}check-membership'
+        payload = {
+            'performId': perform_id,
+            'memberCode': self.member_code
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            print(f"Response Status Code: {response.status_code}")  # Debugging
+            print(f"Response Content: {response.text}")  # Debugging
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("success") and data.get("code") == "100":
+                self.member_key = data.get("data", {}).get("memberKey")
+                return True
+            return False
+            
+        except (requests.RequestException, ValueError) as e:
+            print(f"Error checking membership: {e}")
+            return False
+
     def get_seats(self, perform_id, round_id, zone_id, number_of_seats, random_selection=False):
         """ดึงที่นั่งที่ว่างจาก API"""
         url = f'{self.base_url}get-seat'
         payload = {'performId': perform_id, 'roundId': round_id, 'zoneId': zone_id}
+        
+        # Add member information if available
+        if self.member_code and self.member_key:
+            payload.update({
+                "memberCode": self.member_code,
+                "memberKey": self.member_key
+            })
 
         try:
             response = requests.post(url, headers=self.headers, json=payload)
@@ -123,6 +160,13 @@ class ApiAllTicket:
             },
             'shirtTo': [],
         }
+        
+        # Add member information if available
+        if self.member_code and self.member_key:
+            payload.update({
+                "memberCode": self.member_code,
+                "memberKey": self.member_key
+            })
 
         try:
             response = requests.post(url, headers=self.headers, json=payload)
@@ -153,6 +197,13 @@ class ApiAllTicket:
             },
             'shirtTo': [],
         }
+        
+        # Add member information if available
+        if self.member_code and self.member_key:
+            payload.update({
+                "memberCode": self.member_code,
+                "memberKey": self.member_key
+            })
 
         try:
             response = requests.post(url, headers=self.headers, json=payload)
